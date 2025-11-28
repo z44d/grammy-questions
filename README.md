@@ -1,7 +1,3 @@
-import { conversations } from "@grammyjs/conversations";
-import { Bot, type Context } from "grammy";
-import { QuestionsFlavor, questions } from "grammy-questions";
-
 # grammy-questions
 
 [![npm version](https://img.shields.io/npm/v/grammy-questions.svg)](https://www.npmjs.com/package/grammy-questions)
