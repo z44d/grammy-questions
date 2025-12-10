@@ -41,11 +41,11 @@ type MyContext = QuestionsFlavor<Context>;
 
 const bot = new Bot<MyContext>(""); // <-- put your bot token here
 
-// Add questions middleware
-bot.use(questions());
-
 // Set up conversations plugin
 bot.use(conversations());
+
+// Add questions middleware
+bot.use(questions());
 
 
 // Example command
