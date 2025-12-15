@@ -1,0 +1,45 @@
+{
+  "name": "grammy-questions",
+  "version": "0.1.8",
+  "author": {
+    "name": "Zaid",
+    "url": "https://github.com/z44d"
+  },
+  "repository": {
+    "url": "https://github.com/z44d/grammy-questions"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "devDependencies": {
+    "@biomejs/biome": "2.3.4",
+    "@types/node": "^25.0.2",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "grammy": "^1.38.4"
+  },
+  "description": "A simple and intuitive way to handle interactive questions in your grammY bots with persistent storage support",
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "grammy",
+    "grammyjs",
+    "grammy questions",
+    "telegram",
+    "bots",
+    "interactive",
+    "questionnaire",
+    "conversations",
+    "redis",
+    "storage"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "clean": "biome check . --write --unsafe",
+    "test": "npm install && npm run build && npm pack --dry-run"
+  },
+  "types": "dist/index.d.ts"
+}
