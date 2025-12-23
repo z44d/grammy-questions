@@ -1,5 +1,9 @@
 import type { Context, FilterQuery } from "grammy";
-import { checkContext, QuestionsMap } from "./helpers.js";
+import {
+  checkContext,
+  customGetStorageKeys,
+  QuestionsMap,
+} from "./helpers.js";
 import type { QuestionsFlavor } from "./index.js";
 import { Question } from "./question.js";
 import type { QuestionsOptions } from "./types.js";
@@ -15,6 +19,10 @@ import type { QuestionsOptions } from "./types.js";
  * The middleware manages question state internally using a Map that stores
  * active questions for each user/chat combination. Questions are processed
  * sequentially and can be configured with various handlers and options.
+ *
+ * Filter Processing Order:
+ * 1. Global filter (if configured in options) - Applied to all questions
+ * 2. Question-specific filter (if configured) - Applied to individual questions
  *
  * @template C - The Context type extending grammY's Context
  * @param options - Global configuration options for all questions
@@ -41,11 +49,21 @@ import type { QuestionsOptions } from "./types.js";
  *   getStorageKey: (ctx) => `user-${ctx.from?.id}`
  * }));
  *
+ * // With global filter for all questions
+ * bot.use(questions({
+ *   filter: async (ctx) => {
+ *     // Only process questions from allowed users
+ *     const userId = ctx.from?.id;
+ *     return await isUserAllowed(userId);
+ *   }
+ * }));
+ *
  * // Complete example with question
  * bot.command("survey", async (ctx) => {
  *   await ctx.ask(
  *     ctx.question("message:text")
  *       .doBefore((ctx) => ctx.reply("What's your name?"))
+ *       .filter((ctx) => ctx.message.text.length > 2) // Question-specific filter
  *       .thenDo((ctx) => ctx.reply(`Hello ${ctx.message.text}!`))
  *   );
  * });
@@ -55,7 +73,9 @@ export function questions<C extends Context = Context>(
   options?: QuestionsOptions<C>,
 ) {
   return async (ctx: QuestionsFlavor<C>, next: () => Promise<void>) => {
-    const key = options?.getStorageKey
+    let key: string;
+    let toDelFromFun: string | undefined;
+    key = options?.getStorageKey
       ? options.getStorageKey(ctx)
       : `${ctx.me.id}-${ctx.from?.id}-${ctx.chat?.id}`;
     ctx.ask = async (questions: Question<C> | Question<C>[]) => {
@@ -66,6 +86,18 @@ export function questions<C extends Context = Context>(
         await firsJob(ctx);
         firstQuestion.implementedDoBefore = true;
       }
+      if (list.length === 1) {
+        const getStorageKeyFun = list[0].get("storageKey") as any;
+
+        if (getStorageKeyFun) {
+          customGetStorageKeys.set(
+            Math.random().toString(36).substring(2, 12),
+            getStorageKeyFun,
+          );
+          QuestionsMap.set(getStorageKeyFun(ctx) as string, list);
+          return;
+        }
+      }
       QuestionsMap.set(key, list);
     };
 
@@ -74,6 +106,17 @@ export function questions<C extends Context = Context>(
 
     ctx.cancelQuestions = () => QuestionsMap.delete(key);
 
-    return await checkContext<C>(ctx, key, next, options);
+    for (const [ckey, fun] of customGetStorageKeys) {
+      const extractedKey = await fun(ctx);
+
+      if (extractedKey && QuestionsMap.get(extractedKey)) {
+        key = extractedKey;
+        // customGetStorageKeys.delete(ckey);
+        toDelFromFun = ckey;
+        break;
+      }
+    }
+
+    return await checkContext<C>(ctx, key, next, options, toDelFromFun);
   };
 }

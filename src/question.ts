@@ -36,16 +36,17 @@ export class Question<
 
   private _cancelFunc?: (
     ctx: Filter<QuestionsFlavor<C>, Q extends unknown[] ? Q[number] : Q>,
-  ) => MaybePromise<boolean>;
+  ) => MaybePromise<unknown>;
 
   private _cancelRepeater?: (
     ctx: Filter<QuestionsFlavor<C>, Q extends unknown[] ? Q[number] : Q>,
-  ) => MaybePromise<boolean>;
+  ) => MaybePromise<unknown>;
 
   private _filter?: (
     ctx: Filter<QuestionsFlavor<C>, Q extends unknown[] ? Q[number] : Q>,
-  ) => MaybePromise<boolean>;
+  ) => MaybePromise<unknown>;
 
+  private _storageKey?: (ctx: C) => MaybePromise<string>;
   constructor(
     public query: Q | Q[],
     public implementedDoBefore: boolean = false,
@@ -59,6 +60,7 @@ export class Question<
       | "repeater"
       | "cancelRepeater"
       | "cancelFunc"
+      | "storageKey"
       | "filter",
   ) {
     return q === "handler"
@@ -71,11 +73,51 @@ export class Question<
             ? this._cancelRepeater
             : q === "filter"
               ? this._filter
-              : this._cancelFunc;
+              : q === "cancelFunc"
+                ? this._cancelFunc
+                : this._storageKey;
   }
 
   /**
-   * Set the handler function to execute when a valid answer is received.
+   * Sets a custom storage key function for this question.
+   *
+   * This function determines how the question is uniquely identified in storage.
+   * It's particularly useful when you need to customize how questions are stored
+   * and retrieved, such as when implementing multi-user scenarios or custom
+   * session management.
+   *
+   * Note: This function is only used when asking a single question. When asking
+   * multiple questions in sequence, the global storage key function from the
+   * middleware options will be used instead.
+   *
+   * The function is called every time the middleware checks for incoming messages
+   * to determine if they belong to this specific question.
+   *
+   * @param key - Function that generates a unique storage key based on context
+   * @returns The same Question instance for method chaining
+   *
+   * @example
+   * ```typescript
+   * // Use custom user ID as storage key
+   * question.getStorageKey((ctx) => `user-${ctx.from?.id}`);
+   *
+   * // Use chat ID for group-specific questions (Will answer anyone from that chat.)
+   * question.getStorageKey((ctx) => `chat-${ctx.chat?.id}`);
+   *
+   * // Combine multiple factors for complex scenarios
+   * question.getStorageKey(async (ctx) => {
+   *   const userData = await getUserData(ctx.from?.id);
+   *   return `${userData.sessionId}-${ctx.chat?.id}`;
+   * });
+   * ```
+   */
+  public getStorageKey(key: (ctx: C) => MaybePromise<string>) {
+    this._storageKey = key;
+    return this;
+  }
+
+  /**
+   * Set the handler functi  : this._uniqueId;on to execute when a valid answer is received.
    *
    * This handler is called after the filter (if present) passes validation.
    * It's the main callback for processing the user's response.
@@ -172,7 +214,7 @@ export class Question<
   public filter(
     func: (
       ctx: Filter<QuestionsFlavor<C>, Q extends unknown[] ? Q[number] : Q>,
-    ) => MaybePromise<boolean>,
+    ) => MaybePromise<unknown>,
   ) {
     this._filter = func;
     return this;
@@ -209,7 +251,7 @@ export class Question<
   public cancel(
     func: (
       ctx: Filter<QuestionsFlavor<C>, Q extends unknown[] ? Q[number] : Q>,
-    ) => MaybePromise<boolean>,
+    ) => MaybePromise<unknown>,
   ) {
     this._cancelFunc = func;
     return this;
@@ -246,7 +288,7 @@ export class Question<
   public repeatUntil(
     func: (
       ctx: Filter<QuestionsFlavor<C>, Q extends unknown[] ? Q[number] : Q>,
-    ) => MaybePromise<boolean>,
+    ) => MaybePromise<unknown>,
   ) {
     this._repeater = "infinity";
     this._cancelRepeater = func;

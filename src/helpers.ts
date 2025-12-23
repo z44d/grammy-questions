@@ -1,8 +1,12 @@
 import type { Context } from "grammy";
 import type { Question } from "./question.js";
-import type { QuestionsOptions } from "./types.js";
+import type { MaybePromise, QuestionsOptions } from "./types.js";
 
 export const QuestionsMap = new Map<string, Question<any, any>[]>();
+export const customGetStorageKeys = new Map<
+  string,
+  (ctx: Context) => MaybePromise<string>
+>();
 
 export const clearQuestions = (
   questions: Question<any, any>[],
@@ -21,6 +25,7 @@ export const checkContext = async <C extends Context>(
   key: string,
   next: () => Promise<void>,
   options?: QuestionsOptions<C>,
+  toDelFromFun?: string,
 ) => {
   const questions = QuestionsMap.get(key);
   if (questions && options?.cancel && ctx.has(options.cancel.has)) {
@@ -30,6 +35,7 @@ export const checkContext = async <C extends Context>(
       (!options.cancel.hears && !options.cancel.filter)
     ) {
       QuestionsMap.delete(key);
+      customGetStorageKeys.delete(toDelFromFun ?? "");
       if (options.cancel.onCancel) {
         await options.cancel.onCancel(ctx);
       }
@@ -48,11 +54,17 @@ export const checkContext = async <C extends Context>(
     const filter = question.get("filter") as any | undefined;
 
     if (cancelFunc && (await cancelFunc(ctx))) {
+      customGetStorageKeys.delete(toDelFromFun ?? "");
       return QuestionsMap.delete(key);
     }
 
     if (cancelRepeater && (await cancelRepeater(ctx))) {
+      customGetStorageKeys.delete(toDelFromFun ?? "");
       return clearQuestions(questions, key);
+    }
+
+    if (!(options?.filter ? await options.filter(ctx) : true)) {
+      return await next();
     }
 
     if (!(filter ? await filter(ctx) : true)) {
@@ -68,6 +80,7 @@ export const checkContext = async <C extends Context>(
     question.implementedHandler++;
 
     if (times !== "infinity" && question.implementedHandler >= times) {
+      customGetStorageKeys.delete(toDelFromFun ?? "");
       return clearQuestions(questions, key);
     }
 
