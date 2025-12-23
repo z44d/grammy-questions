@@ -33,7 +33,6 @@ bun add grammy-questions
 This library requires:
 - Node.js or Bun
 - grammY
-- msgpack-lite
 
 ## 🚀 Quick Start
 
@@ -75,8 +74,162 @@ bot.use(
       hears: "/cancel",
       onCancel: (ctx) => ctx.reply("❌ Operation canceled"),
     },
+    // Custom storage key generation
+    getStorageKey: (ctx) => `user-${ctx.from?.id}`,
+    // Global filter for all questions
+    filter: async (ctx) => {
+      // Only process questions from authorized chats
+      const chatId = ctx.chat?.id;
+      return await isAuthorizedChat(chatId);
+    },
   }),
 );
+```
+
+### 🌍 Global Filter Example
+
+The global filter allows you to check all incoming questions globally before they are processed:
+
+```typescript
+// Example: Only allow questions from specific users
+bot.use(
+  questions({
+    filter: async (ctx) => {
+      const userId = ctx.from?.id;
+      // Check if user is in whitelist
+      const allowedUsers = [123456789, 987654321]; // Example user IDs
+      return allowedUsers.includes(userId);
+    },
+  }),
+);
+
+// Example: Implement rate limiting
+bot.use(
+  questions({
+    filter: async (ctx) => {
+      const userId = ctx.from?.id;
+      const canProceed = await checkRateLimit(userId);
+      if (!canProceed) {
+        await ctx.reply("⚠️ Too many requests. Please wait a moment.");
+      }
+      return canProceed;
+    },
+  }),
+);
+
+// Example: Maintenance mode
+bot.use(
+  questions({
+    filter: (ctx) => {
+      if (isMaintenanceMode()) {
+        ctx.reply("🔧 Bot is under maintenance. Please try again later.");
+        return false;
+      }
+      return true;
+    },
+  }),
+);
+```
+
+### 🔑 Custom Storage Key Example
+
+Use `getStorageKey` to customize how questions are stored and retrieved:
+
+```typescript
+// Example: Game challenge with custom storage key
+bot.command("challenge").chatType("supergroup", (ctx) => {
+  const randomString = Math.random().toString(36).substring(2, 12);
+  ctx.ask(
+    ctx
+      .question("message:text")
+      .filter((ctx) => ctx.message.text === randomString)
+      .getStorageKey((ctx) => `ingame-${ctx.chat?.id}`) // Custom storage key
+      .doBefore((ctx) =>
+        ctx.reply(
+          `- The first to send this random string will win: ${randomString}`,
+        ),
+      )
+      .thenDo((ctx) =>
+        ctx.reply(`Congrats ${ctx.from.first_name}! You won.`),
+      ),
+  );
+});
+
+// Example: User-specific questions
+bot.command("profile", (ctx) => {
+  ctx.ask(
+    ctx
+      .question("message:text")
+      .getStorageKey((ctx) => `profile-${ctx.from?.id}`) // User-specific storage
+      .doBefore((ctx) => ctx.reply("What's your favorite color?"))
+      .thenDo((ctx) => {
+        // Save user preference
+        saveUserPreference(ctx.from.id, ctx.message.text);
+        return ctx.reply(`Got it! Your favorite color is ${ctx.message.text}`);
+      }),
+  );
+});
+```
+
+### 🎮 Interactive Game Example
+
+Create an engaging challenge game where users compete to be the first to send a random string:
+
+```typescript
+// Helper function to generate random strings
+const getRandomString = () => Math.random().toString(36).substring(2, 12);
+
+// Track player scores
+const playerScores: Record<number, number> = {};
+
+bot.command("challenge").chatType("supergroup", (ctx) => {
+  let currentString = getRandomString();
+  
+  ctx.ask(
+    ctx
+      .question("message:text")
+      .filter((ctx) => ctx.message.text === currentString) // Only accept the correct string
+      .repeatUntil(() => false) // Continue indefinitely
+      .cancel((ctx) => {
+        // Allow ending the game with /finish
+        if (ctx.message.text === "/finish") {
+          const totalScores = Object.entries(playerScores)
+            .map(([userId, score]) => `Player ${userId}: ${score} points`)
+            .join('\n');
+          ctx.reply(`🏁 Game finished!\n${totalScores}`);
+          return true;
+        }
+        return false;
+      })
+      .getStorageKey((ctx) => `game-${ctx.chat?.id}`) // Chat-specific game state
+      .doBefore((ctx) =>
+        ctx.reply(
+          `🎯 **Challenge Started!**\n\n` +
+          `Be the first to send this exact string:\n` +
+          `\`${currentString}\`\n\n` +
+          `Type /finish to end the game`,
+          { parse_mode: "Markdown" }
+        ),
+      )
+      .thenDo((ctx) => {
+        // Update player score
+        const playerId = ctx.from.id;
+        playerScores[playerId] = (playerScores[playerId] || 0) + 1;
+        
+        // Generate new challenge
+        currentString = getRandomString();
+        
+        ctx.reply(
+          `🎉 **Correct!** ${ctx.from.first_name} earned a point!\n\n` +
+          `📊 **Current Score:** ${playerScores[playerId]} points\n\n` +
+          `🎯 **New Challenge:**\n` +
+          `\`${currentString}\`\n\n` +
+          `Who will be first this time?`,
+          { parse_mode: "Markdown" }
+        );
+      }),
+  );
+});
 ```
 
 ### 📝 Handling Multiple Questions
@@ -190,6 +343,39 @@ bot.command("validate", async (ctx) => {
 });
 ```
 
+## 🔄 Filter Processing Order
+
+When using both global and question-specific filters, they are processed in the following order:
+
+1. **Global Filter** (if configured in middleware options) - Applied to all questions
+2. **Question-Specific Filter** (if configured on individual questions) - Applied after global filter passes
+
+```typescript
+// Example showing filter order
+bot.use(
+  questions({
+    // Step 1: This filter runs first for all questions
+    filter: async (ctx) => {
+      console.log("Global filter checking...");
+      return await isUserAuthorized(ctx.from?.id);
+    },
+  }),
+);
+
+bot.command("example", async (ctx) => {
+  await ctx.ask(
+    ctx
+      .question("message:text")
+      // Step 2: This filter runs only if global filter passes
+      .filter((ctx) => {
+        console.log("Question-specific filter checking...");
+        return ctx.message.text.length > 5;
+      })
+      .thenDo((ctx) => ctx.reply("Both filters passed!"))
+  );
+});
+```
+
 ## 📚 API Reference
 
 ### `questions(options?)`
@@ -202,6 +388,8 @@ Middleware function that enhances your bot context with question handling capabi
   - `hears`: String or RegExp to match for cancellation
   - `filter`: Custom filter function for cancellation
   - `onCancel`: Handler function when cancellation occurs
+- `getStorageKey`: Custom function to generate storage keys (default: `${ctx.me.id}-${ctx.from?.id}-${ctx.chat?.id}`)
+- `filter`: Global filter function that checks all incoming questions before they are processed
 
 ### `ctx.ask(questions)`
 
@@ -225,6 +413,7 @@ Create a new Question instance with the provided filter/query.
 - `.cancel(handler)`: Custom cancellation logic for this question
 - `.repeat(n)`: Repeat the question n times
 - `.repeatUntil(handler)`: Repeat until the handler returns true
+- `.getStorageKey(handler)`: Set a custom storage key function for this question (only works with single questions)
 
 ### `ctx.cancelQuestions()`
 
