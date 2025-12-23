@@ -58,6 +58,50 @@ export type QuestionsOptions<
    * @returns Unique string key for storing questions
    */
   getStorageKey?: (ctx: C) => string;
+
+  /**
+   * Global filter function that checks all incoming questions before they are processed.
+   *
+   * This filter is applied globally to all questions and is evaluated before any
+   * question-specific filters. It provides a way to implement global validation
+   * or preprocessing logic that applies to all questions in your bot.
+   *
+   * If the filter returns a falsy value, the question processing is skipped and
+   * the middleware continues to the next handler. If it returns a truthy value,
+   * the question processing continues with question-specific filters.
+   *
+   * This is useful for implementing features like:
+   * - Global rate limiting
+   * - User permission checks
+   * - Maintenance mode checks
+   * - Global state validation
+   *
+   * @param ctx - The context object for the incoming update
+   * @returns Promise resolving to a truthy value to continue processing, or falsy to skip
+   *
+   * @example
+   * ```typescript
+   * // Only process questions from allowed users
+   * filter: async (ctx) => {
+   *   const userId = ctx.from?.id;
+   *   const isAllowed = await isUserAllowed(userId);
+   *   return isAllowed;
+   * }
+   *
+   * // Skip questions during maintenance
+   * filter: (ctx) => {
+   *   return !isMaintenanceMode();
+   * }
+   *
+   * // Implement rate limiting
+   * filter: async (ctx) => {
+   *   const userId = ctx.from?.id;
+   *   const canProceed = await checkRateLimit(userId);
+   *   return canProceed;
+   * }
+   * ```
+   */
+  filter?: (ctx: C) => MaybePromise<unknown>;
 };
 
 export type SerializedQuestion = {
